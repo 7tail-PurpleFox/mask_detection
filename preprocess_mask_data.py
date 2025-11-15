@@ -108,22 +108,13 @@ for xml_file in tqdm.tqdm(xml_files, desc="Processing XML files", unit="file"):
     if ext == "":
         ext = ".png"
 
-    for idx in range(AUGMENTATIONS_PER_IMAGE):
-        augmented = transform(image=image, bboxes=bboxes, category_ids=labels)
-        aug_img = augmented['image']
-        aug_bboxes = augmented['bboxes']
-        aug_labels = augmented['category_ids']
-
-        
-
-    
-
     # 每個增強版本也寫對應的 XML
     for idx in range(AUGMENTATIONS_PER_IMAGE):
         augmented = transform(image=image, bboxes=bboxes, category_ids=labels)
         aug_img = augmented['image']
         aug_bboxes = augmented['bboxes']
         aug_labels = augmented['category_ids']
+        face_be_eliminated += (len(bboxes) - len(aug_bboxes))
         
         new_img_name = f"{base_name}_aug_{idx}{ext}"
         cv2.imwrite(os.path.join(out_img_dir, new_img_name), aug_img)
