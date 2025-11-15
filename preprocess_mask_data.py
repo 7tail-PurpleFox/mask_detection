@@ -18,6 +18,8 @@ clip_out_dir = os.path.join(target_path, "clips") # 輸出裁切人臉資料夾
 zero_face_report = os.path.join(target_path, "zero_face_detected.txt") # 零人臉報告檔案
 # confidence thresholds
 min_conf = 0.4
+# 每張圖要產生的增強版本數量
+AUGMENTATIONS_PER_IMAGE = 4
 
 # 建立目標資料夾
 if not os.path.exists(target_path):
@@ -36,12 +38,10 @@ if os.path.exists(zero_face_report):
 
 # 處理第一個資料集
 print("Processing Dataset A...")
+print(f"process {AUGMENTATIONS_PER_IMAGE} augmentations per image.")
 # 資料夾設定
 img_dir = os.path.join(mask_path_1, "images")
 xml_dir = os.path.join(mask_path_1, "annotations")
-
-# 每張圖要產生的增強版本數量
-AUGMENTATIONS_PER_IMAGE = 4
 
 # 增強組合
 transform = A.Compose([
@@ -88,6 +88,8 @@ for xml_file in tqdm.tqdm(xml_files, desc="Processing XML files", unit="file"):
     ET.SubElement(size, "height").text = str(image.shape[0])
     ET.SubElement(size, "depth").text = "3"
     for label, box in zip(labels, bboxes):
+        if int(box[2])-int(box[0]) <=0 or int(box[3])-int(box[1]) <=0:
+            continue
         obj = ET.SubElement(new_root, "object")
         ET.SubElement(obj, "name").text = label
         bndbox = ET.SubElement(obj, "bndbox")
@@ -141,6 +143,8 @@ for xml_file in tqdm.tqdm(xml_files, desc="Processing XML files", unit="file"):
         ET.SubElement(size, "depth").text = "3"
 
         for label, box in zip(aug_labels, aug_bboxes):
+            if int(box[2])-int(box[0]) <=0 or int(box[3])-int(box[1]) <=0:
+                continue
             obj = ET.SubElement(new_root, "object")
             ET.SubElement(obj, "name").text = label
             bndbox = ET.SubElement(obj, "bndbox")
@@ -155,6 +159,7 @@ print("Dataset A processing complete.")
         
 # 處理第二個資料集
 print("Processing Dataset B...")
+print("use face detection to generate XML annotations.")
 # input directories (adjust to your actual folders)
 correct_img_dir = os.path.join(mask_path_2, "Correct")
 incorrect_img_dir = os.path.join(mask_path_2, "Incorrect")
@@ -270,7 +275,8 @@ def process_file(fname, root_dir, base_dir, conf_thresh):
         ymin = max(0, int(y))
         xmax = min(w, int(x + fw))
         ymax = min(h, int(y + fh))
-
+        if xmax <= xmin or ymax <= ymin:
+            continue
         obj = ET.SubElement(ann_root, 'object')
         # 根據來源資料夾設定標籤：來自 correct_img_dir 的視為正確配戴
         label = 'with_mask' if base_dir == correct_img_dir else 'mask_weared_incorrect'
@@ -348,5 +354,17 @@ for xml_file in tqdm.tqdm(xml_files, desc="Clipping faces", unit="file"):
         else:
             out_dir = mask_weared_incorrect
         clip_name = f"{os.path.splitext(img_file)[0]}_{name}.jpg"
-        cv2.imwrite(os.path.join(out_dir, clip_name), face_clip)
+        try:
+            cv2.imwrite(os.path.join(out_dir, clip_name), face_clip)
+        except Exception as e:
+            print(f"Error saving {clip_name}: {e}")
+            print(f"name: {name}")
+            print(f"Face box: xmin={xmin}, ymin={ymin}, xmax={xmax}, ymax={ymax}, image shape={image.shape}")
 print("Clipping complete.")
+print("All processing complete.")
+print(f"Total xml files: {len(os.listdir(out_xml_dir))}")
+print(f"Total image counts: {len(os.listdir(out_img_dir))}")
+print(f"Total clipped faces: {len(os.listdir(with_mask)) + len(os.listdir(without_mask)) + len(os.listdir(mask_weared_incorrect))}")
+print(f"Total clipped faces with mask: {len(os.listdir(with_mask))}")
+print(f"Total clipped faces without mask: {len(os.listdir(without_mask))}")
+print(f"Total clipped faces with incorrect mask: {len(os.listdir(mask_weared_incorrect))}")

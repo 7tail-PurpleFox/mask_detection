@@ -23,7 +23,7 @@ net = cv2.dnn.readNetFromCaffe(prototxt, caffemodel)
 out_dir = "recheck_zero_face"
 os.makedirs(out_dir, exist_ok=True)
 
-with open("zero_face_detected.txt", 'r') as f:
+with open("mask_data\zero_face_detected.txt", 'r') as f:
     zero_face_files = f.read().splitlines()
 
 
