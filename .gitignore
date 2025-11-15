@@ -1,0 +1,13 @@
+/.venv
+/archive
+/Check NewFace Mask Dataset
+/check_one_image_conf.py
+/CNN.ipynb
+/deploy.prototxt
+/mask_data
+/NewFace Mask Dataset
+/res10_300x300_ssd_iter_140000.caffemodel
+/test.py
+/test2.py
+/test4.py
+/zero_face_detected.txt
