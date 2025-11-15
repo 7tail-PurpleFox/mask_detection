@@ -43,6 +43,8 @@ print(f"process {AUGMENTATIONS_PER_IMAGE} augmentations per image.")
 img_dir = os.path.join(mask_path_1, "images")
 xml_dir = os.path.join(mask_path_1, "annotations")
 
+face_be_eliminated = 0
+
 # 增強組合
 transform = A.Compose([
     A.HorizontalFlip(p=0.5),
@@ -89,6 +91,7 @@ for xml_file in tqdm.tqdm(xml_files, desc="Processing XML files", unit="file"):
     ET.SubElement(size, "depth").text = "3"
     for label, box in zip(labels, bboxes):
         if int(box[2])-int(box[0]) <=0 or int(box[3])-int(box[1]) <=0:
+            face_be_eliminated += 1
             continue
         obj = ET.SubElement(new_root, "object")
         ET.SubElement(obj, "name").text = label
@@ -111,28 +114,29 @@ for xml_file in tqdm.tqdm(xml_files, desc="Processing XML files", unit="file"):
         aug_bboxes = augmented['bboxes']
         aug_labels = augmented['category_ids']
 
-        new_img_name = f"{base_name}_aug_{idx}{ext}"
-        cv2.imwrite(os.path.join(out_img_dir, new_img_name), aug_img)
-        # 在增強後的圖片上畫出 bboxes和標籤(測試用)
-        if check:
-            for box, label in zip(aug_bboxes, aug_labels):
-                x1, y1, x2, y2 = map(int, box)
-                cv2.rectangle(aug_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                text_y = y1 - 10 if y1 - 10 > 10 else y1 + 15
-                cv2.putText(aug_img, str(label), (x1, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            check_img_path = os.path.join(out_check_dir, new_img_name)
-            cv2.imwrite(check_img_path, aug_img)
+        
 
     
 
     # 每個增強版本也寫對應的 XML
     for idx in range(AUGMENTATIONS_PER_IMAGE):
-        # NOTE: we re-run the transform above per idx, so aug_bboxes/aug_labels here
-        # are not available directly. To keep XML synced, re-apply transform to
-        # obtain the boxes for this idx (deterministic seed not set).
         augmented = transform(image=image, bboxes=bboxes, category_ids=labels)
+        aug_img = augmented['image']
         aug_bboxes = augmented['bboxes']
         aug_labels = augmented['category_ids']
+        
+        new_img_name = f"{base_name}_aug_{idx}{ext}"
+        cv2.imwrite(os.path.join(out_img_dir, new_img_name), aug_img)
+        # 在增強後的圖片上畫出 bboxes和標籤(測試用)
+        if check:
+            check_img = aug_img.copy()
+            for box, label in zip(aug_bboxes, aug_labels):
+                x1, y1, x2, y2 = map(int, box)
+                cv2.rectangle(check_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                text_y = y1 - 10 if y1 - 10 > 10 else y1 + 15
+                cv2.putText(check_img, str(label), (x1, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            check_img_path = os.path.join(out_check_dir, new_img_name)
+            cv2.imwrite(check_img_path, check_img)
 
         xml_name = f"{os.path.splitext(xml_file)[0]}_aug_{idx}.xml"
         new_root = ET.Element("annotation")
@@ -144,6 +148,7 @@ for xml_file in tqdm.tqdm(xml_files, desc="Processing XML files", unit="file"):
 
         for label, box in zip(aug_labels, aug_bboxes):
             if int(box[2])-int(box[0]) <=0 or int(box[3])-int(box[1]) <=0:
+                face_be_eliminated += 1
                 continue
             obj = ET.SubElement(new_root, "object")
             ET.SubElement(obj, "name").text = label
@@ -276,6 +281,7 @@ def process_file(fname, root_dir, base_dir, conf_thresh):
         xmax = min(w, int(x + fw))
         ymax = min(h, int(y + fh))
         if xmax <= xmin or ymax <= ymin:
+            face_be_eliminated += 1
             continue
         obj = ET.SubElement(ann_root, 'object')
         # 根據來源資料夾設定標籤：來自 correct_img_dir 的視為正確配戴
@@ -364,6 +370,7 @@ print("Clipping complete.")
 print("All processing complete.")
 print(f"Total xml files: {len(os.listdir(out_xml_dir))}")
 print(f"Total image counts: {len(os.listdir(out_img_dir))}")
+print(f"Total faces eliminated: {face_be_eliminated}")
 print(f"Total clipped faces: {len(os.listdir(with_mask)) + len(os.listdir(without_mask)) + len(os.listdir(mask_weared_incorrect))}")
 print(f"Total clipped faces with mask: {len(os.listdir(with_mask))}")
 print(f"Total clipped faces without mask: {len(os.listdir(without_mask))}")
