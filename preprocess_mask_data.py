@@ -161,7 +161,7 @@ for xml_file in tqdm.tqdm(xml_files, desc="Processing XML files", unit="file"):
         new_tree = ET.ElementTree(new_root)
         new_tree.write(os.path.join(out_xml_dir, xml_name))
 print("Dataset A processing complete.")
-        
+
 # 處理第二個資料集
 print("Processing Dataset B...")
 print("use face detection to generate XML annotations.")
@@ -345,6 +345,7 @@ for xml_file in tqdm.tqdm(xml_files, desc="Clipping faces", unit="file"):
     image = cv2.imread(img_path)
     if image is None:
         continue
+    face_count_in_image = 0
     for obj in root.findall('object'):
         name = obj.find('name').text
         xmlbox = obj.find('bndbox')
@@ -359,13 +360,14 @@ for xml_file in tqdm.tqdm(xml_files, desc="Clipping faces", unit="file"):
             out_dir = without_mask
         else:
             out_dir = mask_weared_incorrect
-        clip_name = f"{os.path.splitext(img_file)[0]}_{name}.jpg"
+        clip_name = f"{os.path.splitext(img_file)[0]}_{name}_{face_count_in_image}.jpg"
         try:
             cv2.imwrite(os.path.join(out_dir, clip_name), face_clip)
         except Exception as e:
             print(f"Error saving {clip_name}: {e}")
             print(f"name: {name}")
             print(f"Face box: xmin={xmin}, ymin={ymin}, xmax={xmax}, ymax={ymax}, image shape={image.shape}")
+        face_count_in_image += 1
 print("Clipping complete.")
 print("All processing complete.")
 print(f"Total xml files: {len(os.listdir(out_xml_dir))}")
