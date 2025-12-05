@@ -1,3 +1,4 @@
+retina-face
 albumentations
 opencv-python
 Pillow
