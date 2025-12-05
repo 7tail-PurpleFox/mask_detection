@@ -1,6 +1,10 @@
+retina-face
 albumentations
 opencv-python
 Pillow
-numpy
+numpy==1.26.0
 tqdm
 matplotlib
+tensorflow==2.10.1
+scikit-learn
+imutils

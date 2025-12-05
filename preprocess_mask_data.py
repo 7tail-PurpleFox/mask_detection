@@ -2,22 +2,21 @@ import albumentations as A
 import cv2
 import os
 import xml.etree.ElementTree as ET
-from urllib.request import urlretrieve
-import numpy as np
 import tqdm
+from retinaface import RetinaFace
 
 # 將兩個口罩資料集合併到同一個資料夾中
 mask_path_1 = "archive/" # Kaggle資料集路徑，下載點: https://www.kaggle.com/datasets/andrewmvd/face-mask-detection
 mask_path_2 = "NewFace Mask Dataset/" # 報告文獻資料集路徑，下載點: https://data.mendeley.com/datasets/8pn3hg99t4/2
+mask_path_3 = "append/" # 補充資料集路徑，下載點: https://www.kaggle.com/datasets/spandanpatnaik09/face-mask-detectormask-not-mask-incorrect-mask
 target_path = "mask_data/" # 合併後的資料夾路徑
-check = True # 是否產生檢查圖
+check = False # 是否產生檢查圖
 out_img_dir = os.path.join(target_path, "images") # 輸出影像資料夾
 out_xml_dir = os.path.join(target_path, "annotations") # 輸出XML資料夾
 out_check_dir = os.path.join(target_path, "check") # 輸出檢查圖資料夾
 clip_out_dir = os.path.join(target_path, "clips") # 輸出裁切人臉資料夾
 zero_face_report = os.path.join(target_path, "zero_face_detected.txt") # 零人臉報告檔案
-# confidence thresholds
-min_conf = 0.4
+
 # 每張圖要產生的增強版本數量
 AUGMENTATIONS_PER_IMAGE = 4
 
@@ -157,7 +156,6 @@ print("Dataset A processing complete.")
 print("Processing Dataset B...")
 print("use face detection to generate XML annotations.")
 # input directories (adjust to your actual folders)
-correct_img_dir = os.path.join(mask_path_2, "Correct")
 incorrect_img_dir = os.path.join(mask_path_2, "Incorrect")
 
 zero_face_count = 0
@@ -171,24 +169,12 @@ os.makedirs(out_img_dir, exist_ok=True)
 if check:
     os.makedirs(out_check_dir, exist_ok=True)
 
-prototxt = "deploy.prototxt"
-caffemodel = "res10_300x300_ssd_iter_140000.caffemodel"
 
-
-# 下載模型相關檔案
-if not os.path.exists(prototxt) or not os.path.exists(caffemodel):
-    urlretrieve(f"https://raw.githubusercontent.com/opencv/opencv/master/samples/dnn/face_detector/{prototxt}",
-                prototxt)
-    urlretrieve(f"https://github.com/opencv/opencv_3rdparty/raw/dnn_samples_face_detector_20170830/{caffemodel}",
-                caffemodel)
-
-
-net = cv2.dnn.readNetFromCaffe(prototxt, caffemodel)
 
 # 支援的影像副檔名
 IMG_EXTS = ('.jpg', '.jpeg', '.png')
 
-def process_file(fname, root_dir, base_dir, conf_thresh):
+def process_file(fname, root_dir, label, color=(255, 0, 0)):
     img_path = os.path.join(root_dir, fname)
     image = cv2.imread(img_path)
     if image is None:
@@ -197,27 +183,19 @@ def process_file(fname, root_dir, base_dir, conf_thresh):
 
     h, w = image.shape[:2]
 
-    # 使用 OpenCV DNN 偵測人臉
-    blob = cv2.dnn.blobFromImage(cv2.resize(image, (300, 300)), 1.0,
-                                    (300, 300), (104.0, 177.0, 123.0))
-    net.setInput(blob)
-    detections = net.forward()
-
+    detections = RetinaFace.detect_faces(image)
+    
     faces = []
-    for i in range(detections.shape[2]):
-        conf = float(detections[0, 0, i, 2])
-        if conf < conf_thresh:
-            continue
-        box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
-        (startX, startY, endX, endY) = box.astype("int")
-        # clip to image bounds
-        startX = max(0, startX)
-        startY = max(0, startY)
-        endX = min(w, endX)
-        endY = min(h, endY)
-        if endX <= startX or endY <= startY:
-            continue
-        faces.append({'box': (startX, startY, endX - startX, endY - startY), 'confidence': conf})
+    if isinstance(detections, dict):
+        for key in detections.keys():
+            identity = detections[key]
+            x1, y1, x2, y2 = identity["facial_area"]
+            x1 = max(0, x1)
+            y1 = max(0, y1)
+            x2 = min(w, x2)
+            y2 = min(h, y2)
+            confidence = identity.get("score", 1.0)
+            faces.append({"box": (x1, y1, x2-x1, y2-y1), "confidence": confidence})
 
     if len(faces) == 0:
         with open(zero_face_report, 'a') as f:
@@ -232,9 +210,16 @@ def process_file(fname, root_dir, base_dir, conf_thresh):
         if len(faces) > 1:
             # Only keep the highest confidence face
             faces = [max(faces, key=lambda x: x['confidence'])]
-        
+        # 檢查名字是否重複，避免覆蓋
+        write_name = fname
+        while True:
+            out_img_path = os.path.join(out_img_dir, write_name)
+            if not os.path.exists(out_img_path):
+                break
+            fname_no_ext, ext = os.path.splitext(write_name)
+            write_name = f"{fname_no_ext}_dup{ext}"
         # 複製圖片到目標資料夾
-        cv2.imwrite(os.path.join(out_img_dir, fname), image)
+        cv2.imwrite(os.path.join(out_img_dir, write_name), image)
         
         # 在 check 資料夾建立帶框的檢查圖並存檔
         if check:
@@ -247,19 +232,17 @@ def process_file(fname, root_dir, base_dir, conf_thresh):
                 ymax = min(h, int(y + fh))
 
                 # 根據來源資料夾選擇框的顏色：正確配戴為綠色，錯誤為紅色
-                color = (0, 255, 0) if base_dir == correct_img_dir else (0, 0, 255)
                 cv2.rectangle(annot, (xmin, ymin), (xmax, ymax), color, 2)
 
                 # 可選文字標註（與後續 XML 標籤一致）
-                label = 'with_mask' if base_dir == correct_img_dir else 'mask_weared_incorrect'
                 cv2.putText(annot, label, (xmin, max(ymin - 6, 0)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
-            out_check_path = os.path.join(out_check_dir, os.path.basename(img_path))
+            out_check_path = os.path.join(out_check_dir, write_name)
             cv2.imwrite(out_check_path, annot)
         
 
     ann_root = ET.Element('annotation')
-    ET.SubElement(ann_root, 'filename').text = os.path.basename(img_path)
+    ET.SubElement(ann_root, 'filename').text = write_name
     size = ET.SubElement(ann_root, 'size')
     ET.SubElement(size, 'width').text = str(w)
     ET.SubElement(size, 'height').text = str(h)
@@ -276,7 +259,6 @@ def process_file(fname, root_dir, base_dir, conf_thresh):
             continue
         obj = ET.SubElement(ann_root, 'object')
         # 根據來源資料夾設定標籤：來自 correct_img_dir 的視為正確配戴
-        label = 'with_mask' if base_dir == correct_img_dir else 'mask_weared_incorrect'
         ET.SubElement(obj, 'name').text = label
         bndbox = ET.SubElement(obj, 'bndbox')
         ET.SubElement(bndbox, 'xmin').text = str(xmin)
@@ -284,38 +266,63 @@ def process_file(fname, root_dir, base_dir, conf_thresh):
         ET.SubElement(bndbox, 'xmax').text = str(xmax)
         ET.SubElement(bndbox, 'ymax').text = str(ymax)
 
-    xml_name = os.path.splitext(os.path.basename(img_path))[0] + '.xml'
+    xml_name = os.path.splitext(write_name)[0] + '.xml'
     ET.ElementTree(ann_root).write(os.path.join(out_xml_dir, xml_name))
     
-# 遍歷兩個資料夾，遞迴搜尋，但忽略名為 'Bandana' 的子資料夾
-for base_dir in (correct_img_dir, incorrect_img_dir):
-    if not os.path.isdir(base_dir):
-        raise ValueError(f"Directory does not exist: {base_dir}")
+# 遍歷Incorrect資料夾，遞迴搜尋，但忽略名為 'Bandana' 的子資料夾
+if not os.path.isdir(incorrect_img_dir):
+    raise ValueError(f"Directory does not exist: {incorrect_img_dir}")
 
-    file_list = []
-    for root_dir, dirs, files in os.walk(base_dir):
-        # 忽略 Bandana 資料夾（避免進入）
-        if 'Bandana' in dirs:
-            dirs.remove('Bandana')
+file_list = []
+for root_dir, dirs, files in os.walk(incorrect_img_dir):
+    # 忽略 Bandana 資料夾（避免進入）
+    if 'Bandana' in dirs:
+        dirs.remove('Bandana')
 
-        for fname in files:
-            if not fname.lower().endswith(IMG_EXTS):
-                continue
-            file_list.append((fname, root_dir))
+    for fname in files:
+        if not fname.lower().endswith(IMG_EXTS):
+            continue
+        file_list.append((fname, root_dir))
+count = 0
+for fname, root_dir in tqdm.tqdm(file_list, desc=f"Processing {os.path.basename(incorrect_img_dir)}", unit="file"):
+    count += 1
+    if count % 80 == 0:
+        process_file(fname, root_dir, label="mask_weared_incorrect", color=(0, 0, 255))
 
-    for fname, root_dir in tqdm.tqdm(file_list, desc=f"Processing {os.path.basename(base_dir)}", unit="file"):
-        process_file(fname, root_dir, base_dir, min_conf)
-    
-    print(f"directory: {base_dir}, zero face count: {zero_face_count-correct_zero_face_count}, one face count: {one_face_count-correct_one_face_count}")
-    if base_dir == correct_img_dir:
-        correct_one_face_count = one_face_count
-        correct_zero_face_count = zero_face_count       
+print(f"directory: {incorrect_img_dir}, zero face count: {zero_face_count-correct_zero_face_count}, one face count: {one_face_count-correct_one_face_count}")       
 
 
 print("Dataset B processing complete.")
-print(f"Total image counts: {zero_face_count + one_face_count}")
-print(f"Images with zero faces: {zero_face_count}")
-print(f"Images with one face: {one_face_count}")     
+
+# 處理append資料夾
+zero_face_count = 0
+one_face_count = 0
+print("Processing Dataset C...")
+for base_dir in os.listdir(mask_path_3):
+    dir_path =  os.path.join(mask_path_3, base_dir)
+    if not os.path.isdir(dir_path):
+        continue
+    file_list = []
+    for file_name in os.listdir(dir_path):
+        if not file_name.lower().endswith(IMG_EXTS):
+            continue
+        file_list.append((file_name, dir_path))
+    for fname, root_dir in tqdm.tqdm(file_list, desc=f"Processing {os.path.basename(dir_path)}", unit="file"):
+        if 'with_mask' in base_dir.lower():
+            label = "with_mask"
+            color = (0, 255, 0)
+        elif 'without_mask' in base_dir.lower():
+            label = "without_mask"
+            color = (255, 0, 0)
+        else:
+            label = "mask_weared_incorrect"
+            color = (0, 0, 255)
+        process_file(fname, root_dir, label=label, color=color)
+    print(f"directory: {dir_path}, zero face count: {zero_face_count}, one face count: {one_face_count}")
+    zero_face_count = 0
+    one_face_count = 0
+print("Dataset C processing complete.")
+
 
 # 產生clip
 print("clipping faces from images...")
@@ -344,6 +351,13 @@ for xml_file in tqdm.tqdm(xml_files, desc="Clipping faces", unit="file"):
         ymin = int(xmlbox.find('ymin').text)
         xmax = int(xmlbox.find('xmax').text)
         ymax = int(xmlbox.find('ymax').text)
+        
+        #擴大臉的範圍
+        xmin = max(0, xmin - int((xmax - xmin) * 0.2))
+        xmax = min(image.shape[1], xmax + int((xmax - xmin) * 0.2))
+        ymin = max(0, ymin - int((ymax - ymin) * 0.2))
+        ymax = min(image.shape[0], ymax + int((ymax - ymin) * 0.2))
+        
         face_clip = image[ymin:ymax, xmin:xmax]
         if name == 'with_mask':
             out_dir = with_mask

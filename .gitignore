@@ -1,7 +1,11 @@
 /.venv
+/venv
 /archive
 /deploy.prototxt
 /mask_data
 /NewFace Mask Dataset
 /res10_300x300_ssd_iter_140000.caffemodel
 /test*
+*.h5
+/training_plots
+/append
