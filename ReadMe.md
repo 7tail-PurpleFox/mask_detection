@@ -12,6 +12,7 @@ source .venv/bin/activate # Linux
 ```
 - 下載package
 ```
+pip install retina-face
 pip install -r requirements.txt
 ```
 
