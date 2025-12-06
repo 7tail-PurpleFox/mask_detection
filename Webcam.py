@@ -83,10 +83,11 @@ while True:
         # MobileNet preprocess
         face_img = cv2.resize(face_img, (size, size))
         face_img = keras.preprocessing.image.img_to_array(face_img)
-        face_img = keras.applications.mobilenet_v2.preprocess_input(face_img)
+        face_img = keras.applications.mobilenet_v3.preprocess_input(face_img)
 
         data[0] = face_img
         prediction = model.predict(data, verbose=0)
+        print(prediction)
         result = np.argmax(prediction[0])
         confidence = prediction[0][result]
         if confidence < args["confidence"]:

@@ -40,7 +40,7 @@ preprocess_mask_data.py將生成mask_data資料夾，裡面的annotations資料�
 preprocess_mask_data.py對每個資料集做不同處理，第一個Kaggle資料集每張圖片做4張增強，報告文獻資料集和第二個Kaggle資料集都增強過且沒有臉的座標，使用retina-face模型偵測出臉的座標後寫進xml檔，其中報告文獻資料集重複的人過多，因此只採用口罩沒戴好的資料夾，忽略Bandana資料夾(這不是口罩)，且每80張圖片採用一張(圖片數除80)。資料集處理完後，將臉的圖片切出來，由於模型切出來的座標大部分都很貼合臉，因此會先將長寬乘1.4倍再切，方便辨識口罩沒戴好的部分。
 
 ---
-訓練模型(MobileNetV2)
+訓練模型(MobileNetV3Large)
 ===
 - 運行MobileNet_train.py
 ```
@@ -48,10 +48,10 @@ python MobileNet_train.py
 ```
 - 參數表，能自己加參數，預設的部分看code的第80行那裡
 ```
-usage: MobileNet_train.py [-h] [--data_dir DATA_DIR] [--img_size IMG_SIZE IMG_SIZE] [--batch_size BATCH_SIZE] [--epochs EPOCHS] [--model_out MODEL_OUT]
-                          [--plots_dir PLOTS_DIR]
+usage: MobileNet_train.py [-h] [--data_dir DATA_DIR] [--img_size IMG_SIZE IMG_SIZE] [--batch_size BATCH_SIZE]
+                          [--epochs EPOCHS] [--model_out MODEL_OUT] [--plots_dir PLOTS_DIR] [--mixed_precision]
 
-Train MobileNetV2-based mask detector
+Train MobileNetV3Large-based mask detector
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -65,6 +65,7 @@ optional arguments:
                         output model filename
   --plots_dir PLOTS_DIR
                         directory to save training plots and reports
+  --mixed_precision     enable mixed precision (fp16) on supported GPUs
 ```
 ---
 會生出h5檔的模型和training_plots資料夾，training_plots資料夾裡放了訓練時的圖表
