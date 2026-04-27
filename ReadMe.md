@@ -87,3 +87,5 @@ optional arguments:
   --model MODEL
   --size SIZE
 ```
+
+測試影片: https://youtu.be/yl_PtX0cw6E
